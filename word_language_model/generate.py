@@ -30,6 +30,8 @@ parser.add_argument('--temperature', type=float, default=1.0,
                     help='temperature - higher will increase diversity')
 parser.add_argument('--log-interval', type=int, default=100,
                     help='reporting interval')
+parser.add_argument('--strategy', type=str, choices=['sampling', 'greedy'], default='sampling',
+                    help='apply sampling or greedy search')
 args = parser.parse_args()
 
 # Set the random seed manually for reproducibility.
@@ -61,15 +63,25 @@ with open(args.outf, 'w') as outf:
             if is_transformer_model:
                 output = model(input, False)
                 word_weights = output[-1].squeeze().div(args.temperature).exp().cpu()
-                word_idx = torch.multinomial(word_weights, 1)[0]
-                word_tensor = torch.Tensor([[word_idx]]).long().to(device)
-                input = torch.cat([input, word_tensor], 0)
+                if args.strategy == 'sampling':
+                    word_idx = torch.multinomial(word_weights, 1)[0]
+                    word_tensor = torch.Tensor([[word_idx]]).long().to(device)
+                    input = torch.cat([input, word_tensor], 0)
+                elif args.strategy == 'greedy':
+                    word_max_prob = word_weights.argmax()
+                    word_idx = word_max_prob
+                    word_tensor = torch.Tensor([[word_idx]]).long().to(device)
+                    input = torch.cat([input, word_tensor], 0)
             else:
                 output, hidden = model(input, hidden)
                 word_weights = output.squeeze().div(args.temperature).exp().cpu()
-                word_idx = torch.multinomial(word_weights, 1)[0]
-                input.fill_(word_idx)
-
+                if args.strategy == 'sampling':
+                    word_idx = torch.multinomial(word_weights, 1)[0]
+                    input.fill_(word_idx)
+                elif args.strategy == 'greedy':
+                    word_max_prob = word_weights.argmax()
+                    word_idx = word_max_prob
+                    input.fill_(word_idx)
             word = corpus.dictionary.idx2word[word_idx]
 
             outf.write(word + ('\n' if i % 20 == 19 else ' '))
